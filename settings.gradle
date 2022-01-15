@@ -1,0 +1,3 @@
+include ':DegreesImageView'
+include ':app'
+rootProject.name = "DegreesImageView"
