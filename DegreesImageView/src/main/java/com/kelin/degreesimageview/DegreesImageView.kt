@@ -1,10 +1,10 @@
 package com.kelin.degreesimageview
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.AttributeSet
 import android.view.MotionEvent
-import android.view.View
 import androidx.appcompat.widget.AppCompatImageView
 
 /**
@@ -24,10 +24,18 @@ class DegreesImageView @JvmOverloads constructor(context: Context, attrs: Attrib
     private val imageResources = ArrayList<String>(36)
 
     /**
-     * 用来记录资源是否加载成功。
+     * 用来记录是否反转手势。
      */
-    private var isSwitcherRunning = false
+    private var isReversal = false
 
+    /**
+     * 当加载完成后自动播放多少帧。
+     */
+    private var framesAutoShow = 0
+
+    /**
+     * 图片加载器。
+     */
     var imageLoader: ImageLoader = DefaultImageLoader()
 
     /**
@@ -38,88 +46,76 @@ class DegreesImageView @JvmOverloads constructor(context: Context, attrs: Attrib
     private val controller = DegreesController(context, this)
 
     /**
-     * 图片切换任务。
-     */
-    private val imageSwitcher by lazy {
-        object : Runnable {
-            override fun run() {
-                if (controller.accumulate > 0) {
-                    controller.accumulate--
-                    showNext()
-                } else if (controller.accumulate < 0) {
-                    controller.accumulate++
-                    showLast()
-                }
-                handler?.postDelayed(this, 40)
-            }
-        }
-    }
-
-    /**
-     * 显示上一张图片。
-     */
-    private fun showLast() {
-        currentIndex--
-        if (currentIndex < 0) {
-            currentIndex = imageResources.lastIndex
-        }
-        imageLoader.loadInto(this, imageResources[currentIndex], drawable)
-    }
-
-    /**
      * 显示下一张图片。
+     * @param leftToRight 是否为从左往右滑动。
      */
-    private fun showNext() {
-        currentIndex++
-        if (currentIndex >= imageResources.size) {
-            currentIndex = 0
+    internal fun onSwitchNext(leftToRight: Boolean, count: Int) {
+        val realAction = if (isReversal) !leftToRight else leftToRight
+        if (realAction) {
+            currentIndex -= count
+            if (currentIndex < 0) {
+                currentIndex = imageResources.lastIndex
+            }
+        } else {
+            currentIndex += count
+            if (currentIndex >= imageResources.size) {
+                currentIndex %= imageResources.size
+            }
         }
         imageLoader.loadInto(this, imageResources[currentIndex], drawable)
     }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        parent?.requestDisallowInterceptTouchEvent(true)
         return controller.onTouchEvent(event)
     }
 
     /**
      * 设置图片资源。
      * @param res 图片资源。
-     * @param howManyFramesAutoShow 当图片加载完成后自动播放的帧数，如果加载完成不希望播放则传0，如果希望顺时针播放一遍则传入负的图片数量，如果希望逆时针播放一遍这传入正的图片数量，默认顺时针播放一遍。
+     * @param reversal 是否反转手势处理，由于资源顺序的不同，所以这里提供该参数用户反转手势。
+     * @param resistance 阻力，阻力值越大滑动越不灵敏。
+     * @param howManyFramesAutoShow 当图片加载完成后自动播放的帧数，如果加载完成不希望播放则传0，如果希望播放则传入要播放的帧数(允许范围为：0~res.lastIndex)。
      */
-    fun setImageResources(res: List<String>, howManyFramesAutoShow: Int = -res.size) {
-        isSwitcherRunning = false
+    fun setImageResources(res: List<String>, reversal: Boolean = false, resistance: Int = 3, howManyFramesAutoShow: Int = res.lastIndex) {
+        isReversal = reversal
+        framesAutoShow = if (howManyFramesAutoShow < 0) 0 else if (howManyFramesAutoShow > res.lastIndex) res.lastIndex else howManyFramesAutoShow
+        controller.resistance = if (resistance < 2) 2 else resistance
         imageResources.clear()
         imageResources.addAll(res)
         imageLoader.loadImages(this, imageResources) { successful ->
             if (successful) {
-                if (howManyFramesAutoShow != 0) {
-                    controller.accumulate = howManyFramesAutoShow
+                if (framesAutoShow != 0) {
+                    switchTo(framesAutoShow, 400)
                 }
-                runSwitcher()
             }
         }
     }
 
-    override fun onVisibilityChanged(changedView: View, visibility: Int) {
-        super.onVisibilityChanged(changedView, visibility)
-        if (visibility == View.VISIBLE) {
-            //这里延迟300毫秒，是因为页面进入动画通常为300毫秒，是尽可能保证在页面可见后再播放旋转。
-            handler?.postDelayed({ runSwitcher() }, 300)
-        } else {
-            isSwitcherRunning = false
-            handler?.removeCallbacks(imageSwitcher)
-        }
-    }
-
-
     /**
-     * 当资源预加载完毕后调用。
+     * 自动旋转到指定位置。
+     * @param position 要旋转到的位置。
+     * @param duration 希望旋转的时长。
      */
-    private fun runSwitcher() {
-        if (isAttachedToWindow && !isSwitcherRunning) {
-            isSwitcherRunning = true
-            handler?.post(imageSwitcher)
+    fun switchTo(position: Int, duration: Long) {
+        val start = if (isReversal) {
+            position
+        } else {
+            currentIndex
+        }
+        val end = if (isReversal) {
+            currentIndex
+        } else {
+            position
+        }
+        ValueAnimator.ofInt(start, end).apply {
+            this.duration = duration
+            addUpdateListener {
+                imageLoader.loadInto(this@DegreesImageView, imageResources[it.animatedValue as Int], drawable)
+            }
+            startDelay = 200
+            start()
         }
     }
 }

@@ -1,6 +1,8 @@
 package com.kelin.degreesimageview
 
 import android.graphics.drawable.Drawable
+import android.os.Handler
+import android.os.Looper
 import android.widget.ImageView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
@@ -40,7 +42,9 @@ class DefaultImageLoader : ImageLoader {
 
 
     private fun onLoadImages(target: ImageView, res: List<String>, onDone: (successful: Boolean) -> Unit) {
-        res.forEach { loadImageByUrlAsFile(target, it, ImageRequestListener(res, onDone)) }
+        ImageRequestListener(res, onDone).also { listener ->
+            res.forEach { loadImageByUrlAsFile(target, it, listener) }
+        }
     }
 
     /**
@@ -56,6 +60,8 @@ class DefaultImageLoader : ImageLoader {
 
     private inner class ImageRequestListener(private val res: List<String>, private val onLoadFinishListener: (successful: Boolean) -> Unit) : RequestListener<File> {
 
+        private val handler by lazy { Handler(Looper.getMainLooper()) }
+
         private var successCount = 0
 
         private var finishedCount = 0
@@ -67,12 +73,13 @@ class DefaultImageLoader : ImageLoader {
 
         private fun checkFinished() {
             if (++finishedCount == res.size) {
-                onLoadFinishListener(successCount > res.size / 2)
+                handler.post { onLoadFinishListener(successCount > res.size / 2) }
             }
         }
 
         override fun onResourceReady(resource: File?, model: Any?, target: Target<File>?, dataSource: DataSource?, isFirstResource: Boolean): Boolean {
             ++successCount
+            checkFinished()
             return false
         }
     }
