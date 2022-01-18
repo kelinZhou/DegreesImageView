@@ -22,9 +22,6 @@ internal class DegreesController(private val context: Context, val imageView: Im
     //累积播放的帧数
     internal var accumulate = 0
 
-    //用于过滤灵敏度，避免触摸过于灵敏。
-    private var distanceFilter = 0F
-
     /**
      * 手势处理者。
      */
@@ -51,14 +48,13 @@ internal class DegreesController(private val context: Context, val imageView: Im
             }
 
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent?, distanceX: Float, distanceY: Float): Boolean {
-                distanceFilter += abs(distanceX)
+                val realDistanceX = abs(distanceX)
                 when {
-                    distanceFilter < 2f -> {
+                    realDistanceX < 2f -> {
                         accumulate = 0
                     }
 
-                    distanceFilter < 3f -> {
-                        distanceFilter = 0F
+                    realDistanceX < 3f -> {
                         if (distanceX > 0) {
                             accumulate = -1
                         } else if (distanceX < 0) {
@@ -66,7 +62,6 @@ internal class DegreesController(private val context: Context, val imageView: Im
                         }
                     }
                     distanceX > 0 -> {
-                        distanceFilter = 0F
                         if (accumulate < 0) {
                             accumulate = 0
                         } else {
@@ -74,7 +69,6 @@ internal class DegreesController(private val context: Context, val imageView: Im
                         }
                     }
                     else -> {
-                        distanceFilter = 0F
                         if (accumulate > 0) {
                             accumulate = 0
                         } else {

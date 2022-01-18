@@ -3,13 +3,12 @@ package com.kelin.degreesimageview
 import android.graphics.drawable.Drawable
 import android.widget.ImageView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
-import io.reactivex.Completable
-import io.reactivex.CompletableObserver
-import io.reactivex.android.schedulers.AndroidSchedulers
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.disposables.Disposable
-import io.reactivex.schedulers.Schedulers
+import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.request.RequestListener
+import com.bumptech.glide.request.target.Target
+import java.io.File
 
 /**
  * **描述:** 默认的图片加载器。
@@ -22,15 +21,10 @@ import io.reactivex.schedulers.Schedulers
  */
 class DefaultImageLoader : ImageLoader {
 
-    private var onLoadFinishListener: ((successful: Boolean) -> Unit)? = null
-
-    private val disposableHelper = CompositeDisposable()
-
     override fun loadImages(target: ImageView, res: List<String>, onDone: (successful: Boolean) -> Unit) {
         if (res.isNotEmpty()) {
-            onLoadFinishListener = onDone
             loadInto(target, res.first(), null, true)//加载第一帧。
-            onLoadImages(target, res.subList(1, res.size))//加载其他帧
+            onLoadImages(target, res.subList(1, res.size), onDone)//加载其他帧
         }
     }
 
@@ -45,38 +39,41 @@ class DefaultImageLoader : ImageLoader {
     }
 
 
-    private fun onLoadImages(target: ImageView, res: List<String>) {
-        Completable.merge(res.map { createCompletable(target, it) })
-            .subscribeOn(Schedulers.io())
-            .unsubscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribe(object : CompletableObserver {
-                override fun onSubscribe(d: Disposable) {
-                    disposableHelper.add(d)
-                }
-
-                override fun onComplete() {
-                    onLoadFinishListener?.invoke(true)
-                }
-
-                override fun onError(e: Throwable) {
-                    onLoadFinishListener?.invoke(false)
-                    e.printStackTrace()
-                }
-            })
-
+    private fun onLoadImages(target: ImageView, res: List<String>, onDone: (successful: Boolean) -> Unit) {
+        res.forEach { loadImageByUrlAsFile(target, it, ImageRequestListener(res, onDone)) }
     }
 
     /**
      * 创建下载任务。
      */
-    private fun createCompletable(target: ImageView, url: String): Completable {
-        return Completable.create {
-            Glide.with(target).asFile()
-                .load(url)
-                .diskCacheStrategy(DiskCacheStrategy.DATA)
-                .submit()
-            it.onComplete()
+    private fun loadImageByUrlAsFile(target: ImageView, url: String, listener: RequestListener<File>) {
+        Glide.with(target).asFile()
+            .load(url)
+            .diskCacheStrategy(DiskCacheStrategy.DATA)
+            .listener(listener)
+            .submit()
+    }
+
+    private inner class ImageRequestListener(private val res: List<String>, private val onLoadFinishListener: (successful: Boolean) -> Unit) : RequestListener<File> {
+
+        private var successCount = 0
+
+        private var finishedCount = 0
+
+        override fun onLoadFailed(e: GlideException?, model: Any?, target: Target<File>?, isFirstResource: Boolean): Boolean {
+            checkFinished()
+            return false
+        }
+
+        private fun checkFinished() {
+            if (++finishedCount == res.size) {
+                onLoadFinishListener(successCount > res.size / 2)
+            }
+        }
+
+        override fun onResourceReady(resource: File?, model: Any?, target: Target<File>?, dataSource: DataSource?, isFirstResource: Boolean): Boolean {
+            ++successCount
+            return false
         }
     }
 }
